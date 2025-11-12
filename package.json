@@ -1,0 +1,26 @@
+{
+  "name": "cjson",
+  "version": "0.1.0",
+  "description": "Compact JSON - Token-efficient serialization for LLMs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.ts"
+  },
+  "keywords": [
+    "json",
+    "serialization",
+    "llm",
+    "token-efficient",
+    "compact"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {},
+  "dependencies": {}
+}
+
