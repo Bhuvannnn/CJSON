@@ -77,31 +77,29 @@ function parseValue(context: ParseContext): ASTNode {
 }
 
 /**
- * Parses an object
+ * Parses an object with a specified base indentation level
  */
-function parseObject(context: ParseContext): ObjectNode {
-  const startToken = peek(context);
-  if (!startToken || startToken.type !== TokenType.KEY) {
-    throw new ParseError('Expected object key', context.line, context.column);
-  }
-
+function parseObjectWithIndent(context: ParseContext, baseIndent: number): ObjectNode {
   const properties = new Map<string, ASTNode>();
-  const currentIndent = getCurrentIndent(context);
+  const currentIndent = baseIndent;
+  let startToken: Token | null = null;
 
   while (!isEOF(context)) {
-    // Calculate indentation BEFORE skipping whitespace
-    // (so we can see INDENT tokens before they're consumed)
-    let indent = 0;
+    // Calculate indentation of the current line BEFORE skipping whitespace
+    // This is critical - we need to see INDENT tokens before skipWhitespace consumes them
+    let lineIndent = 0;
     let checkIndex = context.currentIndex;
     
     // Count INDENT tokens at current position (before skipWhitespace consumes them)
+    // Skip past any NEWLINE tokens and count INDENT tokens after them
     while (checkIndex < context.tokens.length) {
       const t = context.tokens[checkIndex];
       if (t.type === TokenType.NEWLINE) {
-        indent = 0; // Reset after newline
+        // Reset indent after newline and continue past it
+        lineIndent = 0;
         checkIndex++;
       } else if (t.type === TokenType.INDENT) {
-        indent += t.value.length;
+        lineIndent += t.value.length;
         checkIndex++;
       } else {
         break;
@@ -109,27 +107,32 @@ function parseObject(context: ParseContext): ObjectNode {
     }
     
     // If we've moved to a less indented level, we're done with this object
-    if (indent < currentIndent) {
+    // Note: lineIndent === currentIndent means we're at the same level (continue parsing)
+    if (lineIndent < currentIndent) {
       break;
     }
 
+    // Now skip whitespace (this will consume INDENT tokens we just measured)
     skipWhitespace(context);
+    
     const token = peek(context);
     if (!token || token.type === TokenType.EOF) {
       break;
     }
     
-    // Use the indent we calculated (before skipWhitespace)
-    if (indent < currentIndent) {
-      break;
-    }
+    // Use the lineIndent we calculated (before skipWhitespace)
+    // We're at the right indentation level (lineIndent >= currentIndent)
+    // This means we should parse this key as part of the current object
 
     // Parse key-value pair
     if (token.type === TokenType.KEY) {
-      // Only parse keys at current or greater indentation
-      if (indent < currentIndent) {
-        break;
+      // Save the first token for line/column info
+      if (!startToken) {
+        startToken = token;
       }
+      
+      // We're at the right indentation level (lineIndent >= currentIndent)
+      // This means we should parse this key as part of the current object
 
       const keyToken = consume(context, TokenType.KEY);
       if (!keyToken) break;
@@ -150,17 +153,30 @@ function parseObject(context: ParseContext): ObjectNode {
       // Check if value is on next line (nested object)
       const nextToken = peek(context);
       if (nextToken?.type === TokenType.NEWLINE) {
-        // Consume newline and check for indented content
+        // Consume newline
         consume(context, TokenType.NEWLINE);
-        skipWhitespace(context);
         
-        const afterNewlineIndent = getCurrentIndent(context);
+        // Calculate indentation BEFORE skipping whitespace
+        let afterNewlineIndent = 0;
+        let checkIdx = context.currentIndex;
+        while (checkIdx < context.tokens.length) {
+          const t = context.tokens[checkIdx];
+          if (t.type === TokenType.INDENT) {
+            afterNewlineIndent += t.value.length;
+            checkIdx++;
+          } else {
+            break;
+          }
+        }
+        
         if (afterNewlineIndent > currentIndent) {
-          // Nested object - check if next token is a KEY
-          const tokenAfterIndent = peek(context);
-          if (tokenAfterIndent?.type === TokenType.KEY) {
-            // Parse as nested object
-            const nestedObject = parseObject(context);
+          // Nested object - check if next token is INDENT (which will be followed by KEY)
+          // We've already calculated the indentation, so we know there should be INDENT tokens
+          if (context.currentIndex < context.tokens.length && 
+              context.tokens[context.currentIndex]?.type === TokenType.INDENT) {
+            // Parse as nested object with explicit base indentation
+            // The nested parser will handle skipping whitespace and parsing keys
+            const nestedObject = parseObjectWithIndent(context, afterNewlineIndent);
             properties.set(keyToken.value, nestedObject);
           } else {
             // Empty nested object (just a colon with newline)
@@ -193,13 +209,22 @@ function parseObject(context: ParseContext): ObjectNode {
         skipWhitespace(context);
       }
       
-      // Check if there's a newline - if so, consume it and continue
-      // The next iteration will check indentation and parse the next key if appropriate
-      if (peek(context)?.type === TokenType.NEWLINE) {
+      // After parsing a key-value pair, check if there's more content
+      // If there's a newline, consume it and the next iteration will handle the next key
+      const afterValueToken = peek(context);
+      if (afterValueToken?.type === TokenType.NEWLINE) {
         consume(context, TokenType.NEWLINE);
-        // Continue to next iteration - it will check indentation and parse next key
+        // Continue to next iteration - it will:
+        // 1. Calculate indent (should see INDENT token before next KEY)
+        // 2. Check if indent >= currentIndent
+        // 3. If yes, parse the next key-value pair
         continue;
+      } else if (afterValueToken?.type === TokenType.EOF) {
+        // End of input, we're done
+        break;
       }
+      // If there's no newline and no EOF, there might be a comment or something else
+      // Let the loop continue to handle it
     } else if (token.type === TokenType.NEWLINE) {
       consume(context, TokenType.NEWLINE);
       // Continue to next iteration
@@ -209,12 +234,24 @@ function parseObject(context: ParseContext): ObjectNode {
     }
   }
 
+  if (!startToken) {
+    throw new ParseError('Expected object key', context.line, context.column);
+  }
+
   return {
     type: 'object',
     properties,
     line: startToken.line,
     column: startToken.column,
   };
+}
+
+/**
+ * Parses an object (public interface)
+ */
+function parseObject(context: ParseContext): ObjectNode {
+  const baseIndent = getCurrentIndent(context);
+  return parseObjectWithIndent(context, baseIndent);
 }
 
 /**
