@@ -198,33 +198,78 @@ function parseObjectWithIndent(context: ParseContext, baseIndent: number): Objec
         }
       } else {
         // Value is on same line
-        const value = parseValue(context);
+        // Check what type of value it is before parsing
+        const valueToken = peek(context);
+        let value: ASTNode;
+        
+        if (valueToken?.type === TokenType.VALUE) {
+          // Parse primitive directly
+          // consume will call skipWhitespace first, but we've already skipped whitespace
+          // so it should just consume the VALUE token
+          value = parsePrimitive(context);
+        } else if (valueToken?.type === TokenType.BRACKET_OPEN) {
+          // Parse array
+          value = parseArray(context);
+        } else {
+          // Use parseValue for other cases (it will handle skipWhitespace)
+          value = parseValue(context);
+        }
+        
         properties.set(keyToken.value, value);
-      }
-
-      // Skip trailing comments and newlines
-      skipWhitespace(context);
-      while (peek(context)?.type === TokenType.COMMENT) {
-        consume(context, TokenType.COMMENT);
+        
+        // After parsing a value, check what token comes next
+        // consume in parsePrimitive calls skipWhitespace BEFORE consuming,
+        // so after consuming the VALUE token, we should be positioned right after it
+        // The next token should be NEWLINE (if there is one)
+        // Check the token directly at currentIndex (peek does the same thing)
+        const afterValueToken = context.currentIndex < context.tokens.length 
+          ? context.tokens[context.currentIndex] 
+          : null;
+        if (afterValueToken?.type === TokenType.NEWLINE) {
+          // Consume newline - the next iteration will calculate indentation
+          context.currentIndex++; // Consume NEWLINE directly
+          // Continue to next iteration - it will:
+          // 1. Calculate indent (should see INDENT token before next KEY)
+          // 2. Check if indent >= currentIndent
+          // 3. If yes, parse the next key-value pair
+          continue;
+        } else if (afterValueToken?.type === TokenType.EOF) {
+          // End of input, we're done
+          break;
+        }
+        
+        // If there's no newline immediately, there might be whitespace or comments
+        // Skip whitespace (but this might consume a NEWLINE if there is one)
         skipWhitespace(context);
-      }
-      
-      // After parsing a key-value pair, check if there's more content
-      // If there's a newline, consume it and the next iteration will handle the next key
-      const afterValueToken = peek(context);
-      if (afterValueToken?.type === TokenType.NEWLINE) {
-        consume(context, TokenType.NEWLINE);
-        // Continue to next iteration - it will:
-        // 1. Calculate indent (should see INDENT token before next KEY)
-        // 2. Check if indent >= currentIndent
-        // 3. If yes, parse the next key-value pair
+        const afterSkipToken = context.currentIndex < context.tokens.length 
+          ? context.tokens[context.currentIndex] 
+          : null;
+        
+        // Check for comments
+        while (afterSkipToken?.type === TokenType.COMMENT) {
+          consume(context, TokenType.COMMENT);
+          skipWhitespace(context);
+          const nextToken = peek(context);
+          if (nextToken?.type === TokenType.NEWLINE) {
+            consume(context, TokenType.NEWLINE);
+            continue;
+          } else if (nextToken?.type === TokenType.EOF) {
+            break;
+          }
+        }
+        
+        // After skipping whitespace/comments, check for newline or EOF
+        const finalToken = peek(context);
+        if (finalToken?.type === TokenType.NEWLINE) {
+          consume(context, TokenType.NEWLINE);
+          continue;
+        } else if (finalToken?.type === TokenType.EOF) {
+          break;
+        }
+        // If there's no newline and no EOF, continue to next iteration
+        // (might be another key at same level or end of object)
         continue;
-      } else if (afterValueToken?.type === TokenType.EOF) {
-        // End of input, we're done
-        break;
       }
-      // If there's no newline and no EOF, there might be a comment or something else
-      // Let the loop continue to handle it
     } else if (token.type === TokenType.NEWLINE) {
       consume(context, TokenType.NEWLINE);
       // Continue to next iteration
@@ -330,22 +375,49 @@ function parseArrayItem(context: ParseContext): ASTNode {
 
 /**
  * Parses a primitive value
+ * May consume multiple VALUE tokens if they're on the same line (e.g., "New York")
  */
 function parsePrimitive(context: ParseContext): PrimitiveNode | NullNode {
-  const token = consume(context, TokenType.VALUE);
-  if (!token) {
+  const firstToken = consume(context, TokenType.VALUE);
+  if (!firstToken) {
     throw new ParseError('Expected value', context.line, context.column);
   }
 
-  const value = token.value;
+  // Combine multiple VALUE tokens on the same line (e.g., "New York" becomes two tokens)
+  // The tokenizer splits "New York" into two VALUE tokens: "New" and "York"
+  let value = firstToken.value;
+  while (context.currentIndex < context.tokens.length) {
+    const nextToken = context.tokens[context.currentIndex];
+    // If next token is also a VALUE token, combine it (space-separated values on same line)
+    // Skip any whitespace tokens (INDENT, NEWLINE) between VALUE tokens
+    if (nextToken.type === TokenType.INDENT || nextToken.type === TokenType.NEWLINE) {
+      // If we hit a newline, we're done (end of value)
+      if (nextToken.type === TokenType.NEWLINE) {
+        break;
+      }
+      // Skip INDENT tokens (shouldn't happen on same line, but be safe)
+      context.currentIndex++;
+      continue;
+    } else if (nextToken.type === TokenType.VALUE) {
+      // Combine with previous value (space-separated)
+      value += ' ' + nextToken.value;
+      context.currentIndex++;
+    } else if (nextToken.type === TokenType.EOF) {
+      // Stop at EOF
+      break;
+    } else {
+      // Stop at any other token type (COLON, COMMA, etc.)
+      break;
+    }
+  }
 
   // Check for null
   if (value === 'null') {
     return {
       type: 'null',
       value: null,
-      line: token.line,
-      column: token.column,
+      line: firstToken.line,
+      column: firstToken.column,
     };
   }
 
@@ -356,8 +428,8 @@ function parsePrimitive(context: ParseContext): PrimitiveNode | NullNode {
       value: value === 'true',
       primitiveType: 'boolean',
       quoted: false,
-      line: token.line,
-      column: token.column,
+      line: firstToken.line,
+      column: firstToken.column,
     };
   }
 
@@ -369,8 +441,8 @@ function parsePrimitive(context: ParseContext): PrimitiveNode | NullNode {
       value: numValue,
       primitiveType: 'number',
       quoted: false,
-      line: token.line,
-      column: token.column,
+      line: firstToken.line,
+      column: firstToken.column,
     };
   }
 
@@ -380,8 +452,8 @@ function parsePrimitive(context: ParseContext): PrimitiveNode | NullNode {
     value,
     primitiveType: 'string',
     quoted: false,
-    line: token.line,
-    column: token.column,
+    line: firstToken.line,
+    column: firstToken.column,
   };
 }
 
