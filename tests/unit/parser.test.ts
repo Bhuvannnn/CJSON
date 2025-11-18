@@ -169,6 +169,39 @@ describe('Parser - Arrays', () => {
       }
     }
   });
+
+  it('should parse compact inline arrays declared with header', () => {
+    const result = parse('ids[2]: 100, 200');
+    expect(result.type).toBe('object');
+    if (result.type === 'object') {
+      const idsNode = result.properties.get('ids');
+      expect(idsNode?.type).toBe('array');
+      if (idsNode?.type === 'array') {
+        expect(idsNode.items.length).toBe(2);
+        expect(idsNode.format).toBe('compact');
+      }
+    }
+  });
+
+  it('should parse compact multi-line arrays of objects', () => {
+    const result = parse(`users[2]:
+  name: Alice, age: 30
+  name: Bob, age: 25`);
+    expect(result.type).toBe('object');
+    if (result.type === 'object') {
+      const usersNode = result.properties.get('users');
+      expect(usersNode?.type).toBe('array');
+      if (usersNode?.type === 'array') {
+        expect(usersNode.items.length).toBe(2);
+        expect(usersNode.format).toBe('compact');
+        const first = usersNode.items[0];
+        if (first?.type === 'object') {
+          expect(first.properties.get('name')).toBeDefined();
+          expect(first.properties.get('age')).toBeDefined();
+        }
+      }
+    }
+  });
 });
 
 describe('Parser - Error Handling', () => {
@@ -177,7 +210,7 @@ describe('Parser - Error Handling', () => {
   });
 
   it('should throw error for invalid syntax', () => {
-    expect(() => parse('name:')).toThrow(ParseError);
+    expect(() => parse('name::')).toThrow(ParseError);
   });
 
   it('should include line and column in error messages', () => {

@@ -38,3 +38,5 @@ yarn-error.log*
 *.tmp
 *.temp
 
+# Reference implementations (external code for reference only)
+reference/

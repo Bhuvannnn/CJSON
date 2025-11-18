@@ -115,6 +115,32 @@ export function tokenize(input: string): Token[] {
     throw new ParseError('Unterminated string', startLine, startColumn);
   };
 
+  // Helper to skip header decorations (e.g., [3]{name,age}) when checking for colon
+  const skipKeyDecorators = (position: number): number => {
+    let idx = position;
+    while (idx < input.length) {
+      if (input[idx] === '[') {
+        const closing = input.indexOf(']', idx + 1);
+        if (closing === -1) {
+          return idx;
+        }
+        idx = closing + 1;
+      } else if (input[idx] === '{') {
+        const closing = input.indexOf('}', idx + 1);
+        if (closing === -1) {
+          return idx;
+        }
+        idx = closing + 1;
+      } else {
+        break;
+      }
+      while (idx < input.length && (input[idx] === ' ' || input[idx] === '\t')) {
+        idx++;
+      }
+    }
+    return idx;
+  };
+
   // Read an unquoted value (key or value)
   const readUnquotedValue = (): string => {
     let value = '';
@@ -174,9 +200,16 @@ export function tokenize(input: string): Token[] {
     if (char === '-') {
       const dashColumn = column;
       advance();
-      // Skip whitespace after dash
-      skipWhitespace();
       tokens.push(createToken(TokenType.DASH, '-', line, dashColumn));
+      // Skip spaces or tabs after dash without emitting INDENT tokens
+      while (true) {
+        const nextChar = peek();
+        if (nextChar === ' ' || nextChar === '\t') {
+          advance();
+          continue;
+        }
+        break;
+      }
       continue;
     }
 
@@ -237,6 +270,7 @@ export function tokenize(input: string): Token[] {
         j++;
       }
       
+      j = skipKeyDecorators(j);
       if (j < input.length && input[j] === ':') {
         tokens.push(createToken(TokenType.KEY, value, line, valueStartColumn));
       } else {
