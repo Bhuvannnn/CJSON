@@ -8,6 +8,18 @@
 export interface BaseNode {
   line: number;
   column: number;
+  /**
+   * Comment that appears before this node (on its own line)
+   */
+  leadingComment?: string;
+  /**
+   * Comment that appears after this node on the same line (inline comment)
+   */
+  inlineComment?: string;
+  /**
+   * Comment that appears after this node (on its own line)
+   */
+  trailingComment?: string;
 }
 
 /**

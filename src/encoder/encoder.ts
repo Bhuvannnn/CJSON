@@ -1,4 +1,5 @@
-import { EncodeError } from '../errors/errors';
+import { EncodeError, ErrorCode } from '../errors/errors';
+import { ASTNode } from '../ast/nodes';
 import {
   formatArray,
   formatObject,
@@ -35,6 +36,11 @@ export interface EncodeOptions {
    * Implemented in Task 3.3+.
    */
   compactArrays?: boolean;
+  /**
+   * Whether to preserve comments when encoding.
+   * Defaults to true.
+   */
+  preserveComments?: boolean;
 }
 
 interface EncodeContext {
@@ -49,6 +55,7 @@ const DEFAULT_OPTIONS: Required<EncodeOptions> = {
   newline: '\n',
   quoteMode: 'auto',
   compactArrays: true,
+  preserveComments: true,
 };
 
 const INLINE_PRIMITIVE_MAX_ITEMS = 5;
@@ -91,10 +98,30 @@ function encodeValue(value: unknown, context: EncodeContext): FormattedValue {
     case 'boolean':
       return { inline: true, text: encodeBoolean(value) };
     case 'undefined':
-      throw new EncodeError('Cannot encode undefined values');
+      throw new EncodeError(
+        'Cannot encode undefined values',
+        0,
+        0,
+        ErrorCode.INVALID_VALUE,
+        {
+          expected: 'null, object, array, string, number, or boolean',
+          actual: 'undefined',
+          suggestion: 'Use null instead of undefined, or remove the property',
+        },
+      );
     case 'function':
     case 'symbol':
-      throw new EncodeError(`Cannot encode value of type ${typeof value}`);
+      throw new EncodeError(
+        `Cannot encode value of type ${typeof value}`,
+        0,
+        0,
+        ErrorCode.UNSUPPORTED_TYPE,
+        {
+          expected: 'null, object, array, string, number, or boolean',
+          actual: typeof value,
+          suggestion: `Convert ${typeof value} to a supported type before encoding`,
+        },
+      );
     default:
       break;
   }
@@ -103,7 +130,16 @@ function encodeValue(value: unknown, context: EncodeContext): FormattedValue {
     return { inline: true, text: encodeString(value.toISOString(), context.options.quoteMode) };
   }
 
-  throw new EncodeError('Unsupported value type');
+  throw new EncodeError(
+    'Unsupported value type',
+    0,
+    0,
+    ErrorCode.UNSUPPORTED_TYPE,
+    {
+      expected: 'null, object, array, string, number, boolean, or Date',
+      suggestion: 'Convert the value to a supported CJSON type',
+    },
+  );
 }
 
 function encodeObject(value: Record<string, unknown>, context: EncodeContext): FormattedValue {
@@ -308,7 +344,17 @@ function encodePrimitive(value: unknown, quoteMode: QuoteMode): string {
     return encodeBoolean(value);
   }
 
-  throw new EncodeError(`Cannot encode primitive value of type ${typeof value}`);
+  throw new EncodeError(
+    `Cannot encode primitive value of type ${typeof value}`,
+    0,
+    0,
+    ErrorCode.INVALID_VALUE,
+    {
+      expected: 'string, number, boolean, or null',
+      actual: typeof value,
+      suggestion: `Convert ${typeof value} to a supported primitive type`,
+    },
+  );
 }
 
 function encodeString(value: string, quoteMode: QuoteMode): string {
@@ -332,6 +378,106 @@ function encodeNumber(value: number): string {
 
 function encodeBoolean(value: boolean): string {
   return value ? 'true' : 'false';
+}
+
+/**
+ * Encodes an AST node to CJSON format, preserving comments
+ */
+export function encodeAST(node: ASTNode, options?: EncodeOptions): string {
+  const mergedOptions = { ...DEFAULT_OPTIONS, ...options };
+  const context: EncodeContext = {
+    indentLevel: 0,
+    indentSize: mergedOptions.indent,
+    newline: mergedOptions.newline,
+    options: mergedOptions,
+  };
+
+  const result = encodeASTNode(node, context);
+  return result.text;
+}
+
+function encodeASTNode(node: ASTNode, context: EncodeContext): FormattedValue {
+  const preserveComments = context.options.preserveComments;
+  
+  switch (node.type) {
+    case 'object': {
+      const properties: FormattedProperty[] = [];
+      for (const [key, value] of node.properties.entries()) {
+        const encodedValue = encodeASTNode(value, {
+          ...context,
+          indentLevel: context.indentLevel + 1,
+        });
+        const property: FormattedProperty = {
+          key,
+          value: encodedValue,
+        };
+        if (preserveComments) {
+          if (value.leadingComment) {
+            property.leadingComment = value.leadingComment;
+          }
+          if (value.inlineComment) {
+            property.inlineComment = value.inlineComment;
+          }
+        }
+        properties.push(property);
+      }
+      const formatted = formatObject(properties, context);
+      if (preserveComments && node.leadingComment) {
+        formatted.leadingComment = node.leadingComment;
+      }
+      if (preserveComments && node.inlineComment) {
+        formatted.inlineComment = node.inlineComment;
+      }
+      if (preserveComments && node.trailingComment) {
+        formatted.trailingComment = node.trailingComment;
+      }
+      return formatted;
+    }
+    case 'array': {
+      const items = node.items.map((item) => encodeASTNode(item, {
+        ...context,
+        indentLevel: context.indentLevel + 1,
+      }));
+      const formatted = formatArray(items, context);
+      if (preserveComments && node.leadingComment) {
+        formatted.leadingComment = node.leadingComment;
+      }
+      if (preserveComments && node.inlineComment) {
+        formatted.inlineComment = node.inlineComment;
+      }
+      if (preserveComments && node.trailingComment) {
+        formatted.trailingComment = node.trailingComment;
+      }
+      return formatted;
+    }
+    case 'primitive': {
+      const text = encodePrimitive(node.value, context.options.quoteMode);
+      const formatted: FormattedValue = { inline: true, text };
+      if (preserveComments && node.leadingComment) {
+        formatted.leadingComment = node.leadingComment;
+      }
+      if (preserveComments && node.inlineComment) {
+        formatted.inlineComment = node.inlineComment;
+      }
+      if (preserveComments && node.trailingComment) {
+        formatted.trailingComment = node.trailingComment;
+      }
+      return formatted;
+    }
+    case 'null': {
+      const formatted: FormattedValue = { inline: true, text: 'null' };
+      if (preserveComments && node.leadingComment) {
+        formatted.leadingComment = node.leadingComment;
+      }
+      if (preserveComments && node.inlineComment) {
+        formatted.inlineComment = node.inlineComment;
+      }
+      if (preserveComments && node.trailingComment) {
+        formatted.trailingComment = node.trailingComment;
+      }
+      return formatted;
+    }
+  }
 }
 
 
