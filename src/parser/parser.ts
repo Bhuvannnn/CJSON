@@ -5,7 +5,7 @@
 
 import { Token, TokenType, ParseContext } from './types';
 import { ASTNode, ObjectNode, ArrayNode, PrimitiveNode, NullNode } from '../ast/nodes';
-import { ParseError } from '../errors/errors';
+import { ParseError, ErrorCode } from '../errors/errors';
 import { tokenize } from './tokenizer';
 
 interface CompactArrayHeader {
@@ -29,11 +29,25 @@ export function parse(input: string): ASTNode {
     column: 1,
   };
 
-  // Skip leading whitespace and newlines
+  // Skip leading whitespace, newlines, and comments
   skipWhitespace(context);
+  
+  // Skip leading comments
+  while (peek(context)?.type === TokenType.COMMENT) {
+    consume(context, TokenType.COMMENT);
+    skipWhitespace(context);
+  }
 
   if (isEOF(context)) {
-    throw new ParseError('Empty input', 1, 1);
+    throw new ParseError(
+      'Empty input - CJSON requires at least one key-value pair',
+      1,
+      1,
+      ErrorCode.EMPTY_INPUT,
+      {
+        suggestion: 'Add at least one property, e.g., "name: value"',
+      },
+    );
   }
 
   // Parse the root value (should be an object)
@@ -47,12 +61,36 @@ function parseValue(context: ParseContext): ASTNode {
   skipWhitespace(context);
 
   if (isEOF(context)) {
-    throw new ParseError('Unexpected end of input', context.line, context.column);
+    throw new ParseError(
+      'Unexpected end of input while parsing value',
+      context.line,
+      context.column,
+      ErrorCode.UNEXPECTED_EOF,
+      {
+        suggestion: 'Ensure all values are complete and properly terminated',
+      },
+    );
   }
 
   const token = peek(context);
   if (!token) {
-    throw new ParseError('Unexpected end of input', context.line, context.column);
+    throw new ParseError(
+      'Unexpected end of input while parsing value',
+      context.line,
+      context.column,
+      ErrorCode.UNEXPECTED_EOF,
+      {
+        suggestion: 'Ensure all values are complete and properly terminated',
+      },
+    );
+  }
+
+  // Skip comments (they should be handled by collectLeadingComments in parseObjectWithIndent)
+  if (token.type === TokenType.COMMENT) {
+    consume(context, TokenType.COMMENT);
+    skipWhitespace(context);
+    // Recursively parse after comment
+    return parseValue(context);
   }
 
   // Check for array
@@ -76,9 +114,15 @@ function parseValue(context: ParseContext): ASTNode {
   }
 
   throw new ParseError(
-    `Unexpected token: ${token.type} (${token.value})`,
+    `Unexpected token while parsing value`,
     token.line,
-    token.column
+    token.column,
+    ErrorCode.UNEXPECTED_TOKEN,
+    {
+      expected: 'object, array, primitive value, or dash',
+      actual: `${token.type} (${token.value})`,
+      suggestion: `Check syntax around line ${token.line}, column ${token.column}. Expected a value but found ${token.type}.`,
+    },
   );
 }
 
@@ -137,6 +181,11 @@ function parseObjectWithIndent(
 
     // Now skip whitespace (this will consume INDENT tokens we just measured)
     skipWhitespace(context);
+    
+    // Collect leading comments before checking for KEY
+    // This must be done after skipWhitespace but before consuming the KEY
+    const leadingComment = collectLeadingComments(context);
+    
     const token = peek(context);
     if (!token || token.type === TokenType.EOF) {
       break;
@@ -163,7 +212,17 @@ function parseObjectWithIndent(
       const compactHeader = parseCompactArrayHeader(keyToken.value, suffix);
       const propertyKey = compactHeader?.key ?? keyToken.value;
       if (!colonToken) {
-        throw new ParseError('Expected colon after key', token.line, token.column);
+        throw new ParseError(
+          'Expected colon after key',
+          token.line,
+          token.column,
+          ErrorCode.MISSING_COLON,
+          {
+            expected: 'colon (:)',
+            actual: token.type,
+            suggestion: `Add a colon after the key "${keyToken.value}", e.g., "${keyToken.value}: value"`,
+          },
+        );
       }
 
       // Don't skip whitespace yet - we need to check if there's a NEWLINE
@@ -183,6 +242,9 @@ function parseObjectWithIndent(
 
       if (compactHeader) {
         const compactArray = parseCompactArrayValue(context, compactHeader, currentIndent, keyToken);
+        if (leadingComment) {
+          compactArray.leadingComment = leadingComment;
+        }
         properties.set(propertyKey, compactArray);
         continue;
       }
@@ -230,6 +292,9 @@ function parseObjectWithIndent(
               // Make sure currentIndex is at the INDENT token (it should be, but let's be explicit)
               // We don't need to change currentIndex - it's already at the INDENT token
               const multiLineArray = parseMultiLineArray(context, afterNewlineIndent);
+              if (leadingComment) {
+                multiLineArray.leadingComment = leadingComment;
+              }
               properties.set(propertyKey, multiLineArray);
               continue; // Continue to next iteration to parse next key-value pair
             }
@@ -243,34 +308,49 @@ function parseObjectWithIndent(
               if (nextTokenAfterNewline?.type === TokenType.INDENT || nextTokenAfterNewline?.type === TokenType.KEY) {
                 // Nested object - the nested parser will handle skipping whitespace and parsing keys
                 const nestedObject = parseObjectWithIndent(context, afterNewlineIndent);
+                if (leadingComment) {
+                  nestedObject.leadingComment = leadingComment;
+                }
                 properties.set(propertyKey, nestedObject);
               } else {
                 // Empty nested object (just a colon with newline)
-                properties.set(propertyKey, {
+                const emptyObj: ObjectNode = {
                   type: 'object',
                   properties: new Map(),
                   line: nextToken.line,
                   column: nextToken.column,
-                });
+                };
+                if (leadingComment) {
+                  emptyObj.leadingComment = leadingComment;
+                }
+                properties.set(propertyKey, emptyObj);
               }
             } else {
               // Empty nested object
-              properties.set(propertyKey, {
+              const emptyObj: ObjectNode = {
                 type: 'object',
                 properties: new Map(),
                 line: nextToken.line,
                 column: nextToken.column,
-              });
+              };
+              if (leadingComment) {
+                emptyObj.leadingComment = leadingComment;
+              }
+              properties.set(propertyKey, emptyObj);
             }
           }
         } else {
           // Empty nested object (just a colon with newline, no indentation)
-          properties.set(propertyKey, {
+          const emptyObj: ObjectNode = {
             type: 'object',
             properties: new Map(),
             line: nextToken.line,
             column: nextToken.column,
-          });
+          };
+          if (leadingComment) {
+            emptyObj.leadingComment = leadingComment;
+          }
+          properties.set(propertyKey, emptyObj);
         }
       } else {
         // Value is on same line
@@ -286,12 +366,16 @@ function parseObjectWithIndent(
         const valueToken = peek(context);
         if (!valueToken || valueToken.type === TokenType.EOF) {
           // Treat missing inline value as empty object
-          properties.set(propertyKey, {
+          const emptyObj: ObjectNode = {
             type: 'object',
             properties: new Map(),
             line: keyToken.line,
             column: keyToken.column,
-          });
+          };
+          if (leadingComment) {
+            emptyObj.leadingComment = leadingComment;
+          }
+          properties.set(propertyKey, emptyObj);
           continue;
         }
         let value: ASTNode;
@@ -307,6 +391,11 @@ function parseObjectWithIndent(
         } else {
           // Use parseValue for other cases (it will handle skipWhitespace)
           value = parseValue(context);
+        }
+        
+        // Attach leading comment to the value node
+        if (leadingComment && value) {
+          value.leadingComment = leadingComment;
         }
         
         properties.set(propertyKey, value);
@@ -374,7 +463,16 @@ function parseObjectWithIndent(
   }
 
   if (!startToken) {
-    throw new ParseError('Expected object key', context.line, context.column);
+    throw new ParseError(
+      'Expected object key',
+      context.line,
+      context.column,
+      ErrorCode.MISSING_KEY,
+      {
+        expected: 'key followed by colon',
+        suggestion: 'Add at least one key-value pair, e.g., "name: value"',
+      },
+    );
   }
 
   return {
@@ -466,7 +564,16 @@ function parseCompactArrayHeader(baseKey: string, suffix: string): CompactArrayH
 function parseArray(context: ParseContext): ArrayNode {
   const startToken = consume(context, TokenType.BRACKET_OPEN);
   if (!startToken) {
-    throw new ParseError('Expected [', context.line, context.column);
+    throw new ParseError(
+      'Expected opening bracket for array',
+      context.line,
+      context.column,
+      ErrorCode.UNEXPECTED_TOKEN,
+      {
+        expected: '[',
+        suggestion: 'Use square brackets for arrays, e.g., "[item1, item2]"',
+      },
+    );
   }
 
   const items: ASTNode[] = [];
@@ -629,7 +736,16 @@ function parseMultiLineArray(context: ParseContext, baseIndent: number): ArrayNo
   }
 
   if (!startToken) {
-    throw new ParseError('Expected array item', context.line, context.column);
+    throw new ParseError(
+      'Expected array item after dash',
+      context.line,
+      context.column,
+      ErrorCode.UNEXPECTED_TOKEN,
+      {
+        expected: 'array item value',
+        suggestion: 'Add a value after the dash, e.g., "- item" or "- key: value"',
+      },
+    );
   }
 
   return {
@@ -885,6 +1001,78 @@ function measureIndentation(context: ParseContext): number {
 }
 
 /**
+ * Collects leading comments (comments on lines before the current position)
+ * Returns the comment text if found, and advances past it
+ * This looks at tokens starting from currentIndex and collects comments
+ * that appear before the next non-comment, non-whitespace token
+ */
+function collectLeadingComments(context: ParseContext): string | undefined {
+  const comments: string[] = [];
+  let idx = context.currentIndex;
+  let foundNonComment = false;
+  
+  // Look forward for comments, stopping at first non-comment/non-whitespace token
+  while (idx < context.tokens.length) {
+    const token = context.tokens[idx];
+    
+    if (token.type === TokenType.INDENT || token.type === TokenType.NEWLINE) {
+      idx++;
+      continue;
+    }
+    
+    if (token.type === TokenType.COMMENT) {
+      comments.push(token.value);
+      idx++;
+      // Skip whitespace after comment
+      while (idx < context.tokens.length && context.tokens[idx].type === TokenType.INDENT) {
+        idx++;
+      }
+      // If next is newline, continue looking for more comments
+      if (idx < context.tokens.length && context.tokens[idx].type === TokenType.NEWLINE) {
+        idx++;
+        continue;
+      }
+      // If next is another comment, continue
+      if (idx < context.tokens.length && context.tokens[idx].type === TokenType.COMMENT) {
+        continue;
+      }
+      // Otherwise we've hit a non-comment token, stop
+      break;
+    }
+    
+    // Hit a non-comment, non-whitespace token - stop collecting
+    break;
+  }
+  
+  if (comments.length > 0) {
+    context.currentIndex = idx;
+    return comments.join('\n');
+  }
+  return undefined;
+}
+
+/**
+ * Collects inline comment (comment after value on same line)
+ * Returns the comment text if found, and advances past it
+ */
+function collectInlineComment(context: ParseContext): string | undefined {
+  // Skip whitespace
+  let idx = context.currentIndex;
+  while (idx < context.tokens.length && context.tokens[idx].type === TokenType.INDENT) {
+    idx++;
+  }
+  
+  // Check for comment
+  if (idx < context.tokens.length && context.tokens[idx].type === TokenType.COMMENT) {
+    const comment = context.tokens[idx].value;
+    context.currentIndex = idx + 1;
+    return comment;
+  }
+  
+  return undefined;
+}
+
+/**
  * Parses an array item (for multi-line arrays with dash)
  * This is used when parsing a value that starts with a dash (not in object context)
  */
@@ -936,19 +1124,26 @@ function parsePrimitive(context: ParseContext): PrimitiveNode | NullNode {
     }
   }
 
+  // Check for inline comment (before checking value type)
+  const inlineComment = collectInlineComment(context);
+  
   // Check for null
   if (value === 'null') {
-    return {
+    const node: NullNode = {
       type: 'null',
       value: null,
       line: firstToken.line,
       column: firstToken.column,
     };
+    if (inlineComment) {
+      node.inlineComment = inlineComment;
+    }
+    return node;
   }
 
   // Check for boolean
   if (value === 'true' || value === 'false') {
-    return {
+    const node: PrimitiveNode = {
       type: 'primitive',
       value: value === 'true',
       primitiveType: 'boolean',
@@ -956,12 +1151,16 @@ function parsePrimitive(context: ParseContext): PrimitiveNode | NullNode {
       line: firstToken.line,
       column: firstToken.column,
     };
+    if (inlineComment) {
+      node.inlineComment = inlineComment;
+    }
+    return node;
   }
 
   // Check for number
   const numValue = parseNumber(value);
   if (numValue !== null) {
-    return {
+    const node: PrimitiveNode = {
       type: 'primitive',
       value: numValue,
       primitiveType: 'number',
@@ -969,10 +1168,14 @@ function parsePrimitive(context: ParseContext): PrimitiveNode | NullNode {
       line: firstToken.line,
       column: firstToken.column,
     };
+    if (inlineComment) {
+      node.inlineComment = inlineComment;
+    }
+    return node;
   }
 
   // Otherwise it's a string
-  return {
+  const node: PrimitiveNode = {
     type: 'primitive',
     value,
     primitiveType: 'string',
@@ -980,6 +1183,12 @@ function parsePrimitive(context: ParseContext): PrimitiveNode | NullNode {
     line: firstToken.line,
     column: firstToken.column,
   };
+  
+  if (inlineComment) {
+    node.inlineComment = inlineComment;
+  }
+  
+  return node;
 }
 
 /**
