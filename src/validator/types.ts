@@ -2,8 +2,6 @@
  * Validator type definitions
  */
 
-import { ASTNode } from '../ast/nodes';
-
 /**
  * Validation error details
  */

@@ -3,7 +3,6 @@
  */
 
 import { EncodeOptions } from '../encoder/encoder';
-import { QuoteMode } from '../encoder/utils';
 
 /**
  * Options for parsing CJSON input

@@ -4,9 +4,10 @@
 
 import { parse } from '../parser/parser';
 import { encode, encodeAST, EncodeOptions } from '../encoder/encoder';
-import { validate, ValidationResult } from '../validator/validator';
+import { validate } from '../validator/validator';
 import { ASTNode } from '../ast/nodes';
-import { PropertySchema } from '../validator/types';
+import { astToJS } from '../ast/converter';
+import { PropertySchema, ValidationResult } from '../validator/types';
 import { ParseOptions, DecodeOptions, CJSONOptions } from './types';
 
 /**
@@ -103,9 +104,8 @@ export function validateOptions(options: CJSONOptions): void {
  * Parses CJSON string with options
  */
 export function parseWithOptions(input: string, options?: ParseOptions): ASTNode {
-  const mergedOptions = mergeParseOptions(options);
-  // For now, parse options are mostly for future use
-  // The parser already handles comments based on AST structure
+  // Validate/normalize options for future expansion
+  mergeParseOptions(options);
   return parse(input);
 }
 
@@ -133,5 +133,32 @@ export function validateWithOptions(
   schema?: PropertySchema,
 ): ValidationResult {
   return validate(node, schema);
+}
+
+/**
+ * Decodes a CJSON string to a JavaScript value
+ * @param input - The CJSON string to decode
+ * @param options - Optional decode options
+ * @returns JavaScript value (object, array, or primitive)
+ * 
+ * @example
+ * ```ts
+ * decode('name: Alice\nage: 30')
+ * // { name: 'Alice', age: 30 }
+ * 
+ * decode('users[2]:\n  name: Alice, age: 30\n  name: Bob, age: 25')
+ * // { users: [{ name: 'Alice', age: 30 }, { name: 'Bob', age: 25 }] }
+ * ```
+ */
+export function decode(input: string, options?: DecodeOptions): unknown {
+  const mergedOptions = mergeDecodeOptions(options);
+  
+  // Parse the input to AST
+  const ast = parseWithOptions(input, mergedOptions);
+  
+  // Convert AST to JavaScript value
+  // The parser already handles type inference (numbers, booleans, null)
+  // so we just need to convert the AST structure to JS
+  return astToJS(ast);
 }
 

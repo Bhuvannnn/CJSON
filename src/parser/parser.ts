@@ -577,7 +577,6 @@ function parseArray(context: ParseContext): ArrayNode {
   }
 
   const items: ASTNode[] = [];
-  let format: 'inline' | 'multiline' | 'compact' = 'inline';
 
   skipWhitespace(context);
 
@@ -622,7 +621,7 @@ function parseArray(context: ParseContext): ArrayNode {
   return {
     type: 'array',
     items,
-    format,
+    format: 'inline',
     line: startToken.line,
     column: startToken.column,
   };
@@ -1009,7 +1008,6 @@ function measureIndentation(context: ParseContext): number {
 function collectLeadingComments(context: ParseContext): string | undefined {
   const comments: string[] = [];
   let idx = context.currentIndex;
-  let foundNonComment = false;
   
   // Look forward for comments, stopping at first non-comment/non-whitespace token
   while (idx < context.tokens.length) {

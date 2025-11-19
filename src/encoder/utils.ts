@@ -3,7 +3,7 @@ export type QuoteMode = 'auto' | 'always' | 'never';
 const SAFE_UNQUOTED_PATTERN = /^[A-Za-z0-9._-]+$/;
 const NUMERIC_PATTERN = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
 const RESERVED_WORDS = new Set(['true', 'false', 'null']);
-const RESERVED_CHAR_PATTERN = /[,:{}\[\]"#]/;
+const RESERVED_CHAR_PATTERN = /[[\],:{}"#]/;
 const ESCAPE_LOOKUP: Record<string, string> = {
   '\\': '\\\\',
   '"': '\\"',

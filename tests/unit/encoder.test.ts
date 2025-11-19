@@ -185,6 +185,27 @@ nested:
     expect(() => encode(undefined)).toThrowError();
     expect(() => encode(Symbol('id'))).toThrowError();
   });
+
+  it('should throw when encoding circular object references', () => {
+    const data: Record<string, unknown> = { name: 'loop' };
+    data.self = data;
+    expect(() => encode(data)).toThrow(/Circular reference/);
+  });
+
+  it('should throw when encoding circular arrays', () => {
+    const list: unknown[] = [];
+    list.push(list);
+    expect(() => encode({ list })).toThrow(/Circular reference/);
+  });
+
+  it('should throw when encoding undefined property values', () => {
+    const payload: Record<string, unknown> = { keep: true, drop: undefined };
+    expect(() => encode(payload)).toThrow(/undefined/);
+  });
+
+  it('should throw when encoding undefined array items', () => {
+    expect(() => encode({ values: [1, undefined] })).toThrow(/undefined/);
+  });
 });
 
 describe('Encoder - string quoting', () => {

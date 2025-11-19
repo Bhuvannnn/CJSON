@@ -45,7 +45,7 @@ export function tokenize(input: string): Token[] {
   // Skip whitespace (but track indentation)
   const skipWhitespace = (): number => {
     let indentLevel = 0;
-    let startColumn = column;
+    const startColumn = column;
     
     while (i < input.length) {
       const char = input[i];
@@ -149,16 +149,23 @@ export function tokenize(input: string): Token[] {
       const char = peek();
       if (char === null) break;
       
-      // Stop at special characters
-      if (char === ':' || char === ',' || char === '[' || char === ']' || 
-          char === '#' || char === '\n' || char === ' ' || char === '\t' || char === '-') {
+      if (
+        char === ':' ||
+        char === ',' ||
+        char === '[' ||
+        char === ']' ||
+        char === '#' ||
+        char === '\n' ||
+        char === ' ' ||
+        char === '\t'
+      ) {
         break;
       }
       
       value += advance()!;
     }
     
-    return value.trim();
+    return value;
   };
 
   // Main tokenization loop
@@ -196,21 +203,35 @@ export function tokenize(input: string): Token[] {
       continue;
     }
 
-    // Handle dash (for array items)
+    // Handle dash (for array items or negative numbers)
     if (char === '-') {
-      const dashColumn = column;
-      advance();
-      tokens.push(createToken(TokenType.DASH, '-', line, dashColumn));
-      // Skip spaces or tabs after dash without emitting INDENT tokens
-      while (true) {
-        const nextChar = peek();
-        if (nextChar === ' ' || nextChar === '\t') {
-          advance();
-          continue;
-        }
-        break;
+      // Check if this is a negative number (dash followed by digit)
+      // Look ahead to see if next non-whitespace char is a digit
+      let j = i + 1;
+      while (j < input.length && (input[j] === ' ' || input[j] === '\t')) {
+        j++;
       }
-      continue;
+      
+      // If followed by a digit, it's part of a number (not an array dash)
+      if (j < input.length && /[0-9]/.test(input[j])) {
+        // This is a negative number - let readUnquotedValue handle it
+        // Don't create a DASH token, just continue to value parsing
+      } else {
+        // This is an array item dash
+        const dashColumn = column;
+        advance();
+        tokens.push(createToken(TokenType.DASH, '-', line, dashColumn));
+        // Skip spaces or tabs after dash without emitting INDENT tokens
+        while (true) {
+          const nextChar = peek();
+          if (nextChar === ' ' || nextChar === '\t') {
+            advance();
+            continue;
+          }
+          break;
+        }
+        continue;
+      }
     }
 
     // Handle opening bracket
@@ -263,7 +284,6 @@ export function tokenize(input: string): Token[] {
       // Determine if this is a KEY or VALUE
       // If next non-whitespace token is COLON, it's a KEY
       let j = i;
-      let foundColon = false;
       
       // Skip whitespace
       while (j < input.length && (input[j] === ' ' || input[j] === '\t')) {
