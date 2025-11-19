@@ -45,7 +45,7 @@ export function tokenize(input: string): Token[] {
   // Skip whitespace (but track indentation)
   const skipWhitespace = (): number => {
     let indentLevel = 0;
-    let startColumn = column;
+    const startColumn = column;
     
     while (i < input.length) {
       const char = input[i];
@@ -284,7 +284,6 @@ export function tokenize(input: string): Token[] {
       // Determine if this is a KEY or VALUE
       // If next non-whitespace token is COLON, it's a KEY
       let j = i;
-      let foundColon = false;
       
       // Skip whitespace
       while (j < input.length && (input[j] === ' ' || input[j] === '\t')) {

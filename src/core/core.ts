@@ -104,9 +104,8 @@ export function validateOptions(options: CJSONOptions): void {
  * Parses CJSON string with options
  */
 export function parseWithOptions(input: string, options?: ParseOptions): ASTNode {
-  const mergedOptions = mergeParseOptions(options);
-  // For now, parse options are mostly for future use
-  // The parser already handles comments based on AST structure
+  // Validate/normalize options for future expansion
+  mergeParseOptions(options);
   return parse(input);
 }
 

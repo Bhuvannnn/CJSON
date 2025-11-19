@@ -2,7 +2,7 @@
  * Parser utility functions
  */
 
-import { ArrayNode, ObjectNode, ASTNode } from '../ast/nodes';
+import { ArrayNode, ObjectNode } from '../ast/nodes';
 
 /**
  * Checks if all items in an array are objects with the same keys

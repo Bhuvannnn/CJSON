@@ -3,7 +3,7 @@
  * Converts AST nodes to plain JavaScript values
  */
 
-import { ASTNode, ObjectNode, ArrayNode, PrimitiveNode, NullNode } from './nodes';
+import { ASTNode, ObjectNode, ArrayNode, PrimitiveNode } from './nodes';
 
 /**
  * Converts an AST node to a JavaScript value
@@ -25,11 +25,8 @@ export function astToJS(node: ASTNode): unknown {
     case 'null': {
       return null;
     }
-    default: {
-      // Exhaustiveness check
-      const _exhaustive: never = node;
-      return null;
-    }
+    default:
+      return assertNever(node);
   }
 }
 
@@ -56,5 +53,9 @@ function astArrayToJS(node: ArrayNode): unknown[] {
  */
 function astPrimitiveToJS(node: PrimitiveNode): string | number | boolean {
   return node.value;
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled AST node type: ${(value as { type: string }).type}`);
 }
 
