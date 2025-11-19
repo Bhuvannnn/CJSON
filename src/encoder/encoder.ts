@@ -47,6 +47,9 @@ interface EncodeContext {
   indentLevel: number;
   indentSize: number;
   newline: string;
+  indentCache: string[];
+  ancestors: Set<unknown>;
+  path: string[];
   options: Required<EncodeOptions>;
 }
 
@@ -66,10 +69,15 @@ const INLINE_PRIMITIVE_MAX_LENGTH = 80;
  */
 export function encode(value: unknown, options?: EncodeOptions): string {
   const mergedOptions = { ...DEFAULT_OPTIONS, ...options };
+  const indentCache: string[] = [''];
+  const ancestors = new Set<unknown>();
   const context: EncodeContext = {
     indentLevel: 0,
     indentSize: mergedOptions.indent,
     newline: mergedOptions.newline,
+    indentCache,
+    ancestors,
+    path: [],
     options: mergedOptions,
   };
 
@@ -77,17 +85,17 @@ export function encode(value: unknown, options?: EncodeOptions): string {
   return result.text;
 }
 
-function encodeValue(value: unknown, context: EncodeContext): FormattedValue {
+function encodeValue(value: unknown, context: EncodeContext, arrayParentKey?: string): FormattedValue {
   if (value === null) {
     return { inline: true, text: 'null' };
   }
 
   if (Array.isArray(value)) {
-    return encodeArray(value, context);
+    return withCircularGuard(value, context, () => encodeArray(value, context, arrayParentKey));
   }
 
   if (isPlainObject(value)) {
-    return encodeObject(value, context);
+    return withCircularGuard(value, context, () => encodeObject(value, context));
   }
 
   switch (typeof value) {
@@ -99,7 +107,7 @@ function encodeValue(value: unknown, context: EncodeContext): FormattedValue {
       return { inline: true, text: encodeBoolean(value) };
     case 'undefined':
       throw new EncodeError(
-        'Cannot encode undefined values',
+        `Cannot encode undefined values at path ${formatPath(context.path)}`,
         0,
         0,
         ErrorCode.INVALID_VALUE,
@@ -112,7 +120,7 @@ function encodeValue(value: unknown, context: EncodeContext): FormattedValue {
     case 'function':
     case 'symbol':
       throw new EncodeError(
-        `Cannot encode value of type ${typeof value}`,
+        `Cannot encode value of type ${typeof value} at path ${formatPath(context.path)}`,
         0,
         0,
         ErrorCode.UNSUPPORTED_TYPE,
@@ -152,40 +160,17 @@ function encodeObject(value: Record<string, unknown>, context: EncodeContext): F
   const properties: FormattedProperty[] = [];
 
   for (const [key, child] of entries) {
-    if (typeof child === 'undefined') {
-      continue;
-    }
-
     const childContext: EncodeContext = {
       ...context,
       indentLevel: context.indentLevel + 1,
+      path: [...context.path, key],
     };
 
-    if (isPlainObject(child)) {
-      const encodedChild = encodeObject(child as Record<string, unknown>, childContext);
-      properties.push({ key, value: encodedChild });
-      continue;
-    }
-
-    if (Array.isArray(child)) {
-      const encodedArray = encodeArray(child, childContext, key);
-      properties.push({ key, value: encodedArray, headerSuffix: encodedArray.headerSuffix });
-      continue;
-    }
-
-    if (child instanceof Date) {
-      const dateString = encodeString(child.toISOString(), context.options.quoteMode);
-      properties.push({
-        key,
-        value: { inline: true, text: dateString },
-      });
-      continue;
-    }
-
-    const primitiveValue = encodePrimitive(child, context.options.quoteMode);
+    const encodedChild = encodeValue(child, childContext, key);
     properties.push({
       key,
-      value: { inline: true, text: primitiveValue },
+      value: encodedChild,
+      headerSuffix: encodedChild.headerSuffix,
     });
   }
 
@@ -203,7 +188,7 @@ function encodeArray(value: unknown[], context: EncodeContext, parentKey?: strin
   }
 
   if (isObjectArray(value)) {
-    const normalizedItems = value.map(normalizeObjectForEncoding);
+    const normalizedItems = value.map((item, index) => normalizeObjectForEncoding(item, context, index));
     const uniformObjects = isUniformObjectArray(normalizedItems);
     const hasFields = normalizedItems[0] ? Object.keys(normalizedItems[0]).length > 0 : false;
     const primitiveFields = normalizedItems.every(hasOnlyPrimitiveValues);
@@ -255,11 +240,25 @@ function isObjectArray(value: unknown[]): value is Record<string, unknown>[] {
   return value.length > 0 && value.every((item) => isPlainObject(item));
 }
 
-function normalizeObjectForEncoding(source: Record<string, unknown>): Record<string, unknown> {
+function normalizeObjectForEncoding(
+  source: Record<string, unknown>,
+  context: EncodeContext,
+  index: number,
+): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, entryValue] of Object.entries(source)) {
     if (typeof entryValue === 'undefined') {
-      continue;
+      throw new EncodeError(
+        `Cannot encode undefined values at path ${formatPath([...context.path, `[${index}]`, key])}`,
+        0,
+        0,
+        ErrorCode.INVALID_VALUE,
+        {
+          expected: 'null, object, array, string, number, or boolean',
+          actual: 'undefined',
+          suggestion: 'Use null instead of undefined, or remove the property',
+        },
+      );
     }
     result[key] = entryValue;
   }
@@ -357,6 +356,54 @@ function encodePrimitive(value: unknown, quoteMode: QuoteMode): string {
   );
 }
 
+function withCircularGuard(
+  value: Record<string, unknown> | unknown[],
+  context: EncodeContext,
+  encoder: () => FormattedValue,
+): FormattedValue {
+  if (context.ancestors.has(value)) {
+    throw new EncodeError(
+      `Circular reference detected at path ${formatPath(context.path)}`,
+      0,
+      0,
+      ErrorCode.INVALID_VALUE,
+      {
+        suggestion: 'Break the cycle or serialize the data without circular references',
+      },
+    );
+  }
+
+  context.ancestors.add(value);
+  try {
+    return encoder();
+  } finally {
+    context.ancestors.delete(value);
+  }
+}
+
+function formatPath(path: string[]): string {
+  if (path.length === 0) {
+    return '<root>';
+  }
+
+  let result = '';
+  for (const segment of path) {
+    if (!segment) {
+      continue;
+    }
+    if (segment.startsWith('[')) {
+      result += segment;
+    } else {
+      if (result.length > 0) {
+        result += '.';
+      }
+      result += segment;
+    }
+  }
+
+  return result || '<root>';
+}
+
 function encodeString(value: string, quoteMode: QuoteMode): string {
   if (quoteMode === 'always') {
     return `"${escapeString(value)}"`;
@@ -385,10 +432,15 @@ function encodeBoolean(value: boolean): string {
  */
 export function encodeAST(node: ASTNode, options?: EncodeOptions): string {
   const mergedOptions = { ...DEFAULT_OPTIONS, ...options };
+  const indentCache: string[] = [''];
+  const ancestors = new Set<unknown>();
   const context: EncodeContext = {
     indentLevel: 0,
     indentSize: mergedOptions.indent,
     newline: mergedOptions.newline,
+    indentCache,
+    ancestors,
+    path: [],
     options: mergedOptions,
   };
 

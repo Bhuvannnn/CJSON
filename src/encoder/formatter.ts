@@ -2,6 +2,7 @@ export interface FormatterContext {
   indentLevel: number;
   indentSize: number;
   newline: string;
+  indentCache?: string[];
 }
 
 export interface FormattedValue {
@@ -23,7 +24,19 @@ export interface FormattedProperty {
 
 export function indentString(context: FormatterContext): string {
   const width = Math.max(0, context.indentLevel * context.indentSize);
-  return width === 0 ? '' : ' '.repeat(width);
+  if (width === 0) {
+    return '';
+  }
+
+  if (!context.indentCache) {
+    return ' '.repeat(width);
+  }
+
+  if (!context.indentCache[width]) {
+    context.indentCache[width] = ' '.repeat(width);
+  }
+
+  return context.indentCache[width]!;
 }
 
 export function formatObject(

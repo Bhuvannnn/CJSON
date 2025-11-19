@@ -9,7 +9,8 @@
     "test": "vitest",
     "test:coverage": "vitest --coverage",
     "lint": "eslint src/**/*.ts",
-    "format": "prettier --write src/**/*.ts"
+    "format": "prettier --write src/**/*.ts",
+    "benchmark": "tsx benchmarks/performance.ts"
   },
   "keywords": [
     "json",
@@ -18,7 +19,22 @@
     "token-efficient",
     "compact"
   ],
-  "author": "",
+  "author": "CJSON Contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bhuvanshah/Cjson.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bhuvanshah/Cjson/issues"
+  },
+  "homepage": "https://github.com/bhuvanshah/Cjson#readme",
+  "files": [
+    "dist",
+    "docs",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^24.10.1",
@@ -27,6 +43,7 @@
     "@vitest/coverage-v8": "^4.0.8",
     "eslint": "^9.39.1",
     "prettier": "^3.6.2",
+    "tsx": "^4.15.7",
     "typescript": "^5.9.3",
     "vitest": "^4.0.8"
   }

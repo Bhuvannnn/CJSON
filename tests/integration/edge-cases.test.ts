@@ -91,5 +91,67 @@ describe('Parser - Edge Cases', () => {
   it('should throw error for invalid syntax', () => {
     expect(() => parse('name::')).toThrow(ParseError);
   });
+
+  it('should parse very long strings', () => {
+    const longString = 'a'.repeat(5000);
+    const input = `payload: ${longString}`;
+    const result = parse(input);
+    expect(result.type).toBe('object');
+    if (result.type === 'object') {
+      const payload = result.properties.get('payload');
+      expect(payload?.type).toBe('primitive');
+      if (payload?.type === 'primitive') {
+        expect(payload.value).toBe(longString);
+        expect((payload.value as string).length).toBe(5000);
+      }
+    }
+  });
+
+  it('should parse unicode characters in values', () => {
+    const input = 'greeting: "こんにちは 🌸"\nstatus: "🚀 ready"';
+    const result = parse(input);
+    expect(result.type).toBe('object');
+    if (result.type === 'object') {
+      const greeting = result.properties.get('greeting');
+      const status = result.properties.get('status');
+      if (greeting?.type === 'primitive' && status?.type === 'primitive') {
+        expect(greeting.value).toBe('こんにちは 🌸');
+        expect(status.value).toBe('🚀 ready');
+      }
+    }
+  });
+
+  it('should parse deeply nested structures (10+ levels)', () => {
+    const depth = 12;
+    const lines: string[] = [];
+    for (let level = 1; level <= depth; level++) {
+      const indent = '  '.repeat(level - 1);
+      lines.push(`${indent}level${level}:`);
+    }
+    lines.push(`${'  '.repeat(depth)}value: done`);
+    const input = lines.join('\n');
+    const ast = parse(input);
+    expect(ast.type).toBe('object');
+    if (ast.type !== 'object') {
+      return;
+    }
+
+    let current = ast;
+    for (let level = 1; level <= depth; level++) {
+      const next = current.properties.get(`level${level}`);
+      expect(next).toBeDefined();
+      expect(next?.type).toBe('object');
+      if (next?.type !== 'object') {
+        return;
+      }
+      current = next;
+    }
+
+    const terminal = current.properties.get('value');
+    expect(terminal?.type).toBe('primitive');
+    if (terminal?.type === 'primitive') {
+      expect(terminal.value).toBe('done');
+    }
+  });
 });
 

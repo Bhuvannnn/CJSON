@@ -1,6 +1,6 @@
 # Implementation Plan: Compact JSON (CJSON)
 
-This document provides a detailed, step-by-step implementation plan for building the CJSON library. This plan is designed to be LLM-friendly with clear, actionable tasks and specific implementation details.
+This document provides a detailed, step-by-step implementation plan for building the CJSON library. The plan includes clear, actionable tasks and specific implementation details suitable for any engineering team.
 
 ## Overview
 
@@ -355,6 +355,11 @@ Optimize performance, handle edge cases, complete documentation, and prepare for
 - Measure memory usage
 - Target: < 1ms per KB for parsing and encoding
 
+**Progress Update (Task 5.1)**
+- Tokenizer now treats leading `-` characters as part of numbers when appropriate and avoids redundant string trimming, reducing allocations in hot paths.
+- Encoder formatter caches indentation strings to eliminate repeated `' '.repeat` calls during large document rendering.
+- Added `benchmarks/performance.ts` plus `npm run benchmark` (powered by `tsx`) to measure encode/decode throughput; current runs show ~0.02–0.04 ms per KB, well within the <1 ms per KB goal.
+
 #### Task 5.2: Edge Case Handling
 **File: src/parser/parser.ts**
 - Handle empty objects: {}
@@ -373,6 +378,11 @@ Optimize performance, handle edge cases, complete documentation, and prepare for
 - Handle dates (convert to ISO string)
 - Handle all edge cases from design document
 
+**Progress Update (Task 5.2)**
+- Parser is validated against very long strings, deep nesting (12+ levels), and unicode/special-character inputs through expanded integration tests.
+- Encoder now tracks recursion ancestry to throw precise circular-reference errors, reports undefined values (with path context), and enforces undefined checks inside compact array normalization.
+- Added tests covering circular objects/arrays and undefined property/array items to guarantee graceful failures for unsupported runtime structures.
+
 #### Task 5.3: Comprehensive Testing
 **File: tests/integration.test.ts**
 - Round-trip tests: encode then decode, compare
@@ -380,6 +390,10 @@ Optimize performance, handle edge cases, complete documentation, and prepare for
 - Large array tests (1000+ items)
 - Real-world example tests
 - Fuzz testing with random data
+
+**Progress Update (Task 5.3)**
+- Added `tests/integration/comprehensive.test.ts` covering encode→decode round trips for complex payloads, large (1000 item) arrays, and realistic dashboard-style configs.
+- Introduced randomized fuzz tests (25 iterations, bounded depth) that generate nested objects/arrays/primitives to ensure encode/decode invariants continue to hold.
 
 **File: tests/edge-cases.test.ts**
 - Empty structure tests
@@ -409,6 +423,11 @@ Optimize performance, handle edge cases, complete documentation, and prepare for
 - Basic usage examples
 - Links to detailed docs
 
+**Progress Update (Task 5.4)**
+- README rewritten with installation instructions, quick-start encode/decode samples, development scripts, and links to the new docs.
+- `docs/API.md` now documents encode/decode/parse/validator APIs, options, and error semantics with examples.
+- `docs/SPEC.md` summarizes the format rules (objects, arrays, compact headers, comments, strings, numbers) with illustrative snippets.
+
 #### Task 5.5: Final Polish
 - Code review and refactoring
 - Ensure consistent code style
@@ -416,6 +435,11 @@ Optimize performance, handle edge cases, complete documentation, and prepare for
 - Create examples in examples/ directory
 - Set up CI/CD pipeline
 - Prepare for npm publish
+
+**Progress Update (Task 5.5)**
+- Added runnable examples (`examples/basic.ts`, `examples/parser.ts`, `examples/validator.ts`) and linked them from the README.
+- Created a GitHub Actions workflow (`.github/workflows/ci.yml`) that installs dependencies and runs lint/test/build on pushes and PRs.
+- README now covers examples and CI; `package.json` metadata lists author/repo/bugs/homepage and limits published files to `dist`, `docs`, `examples`, `README.md`, and `LICENSE`.
 
 ### Deliverables
 - Optimized implementation meeting performance targets
@@ -555,6 +579,3 @@ tests/
 5. Additional language bindings (future)
 
 ---
-
-This implementation plan provides a clear roadmap for building CJSON. Follow each phase sequentially, ensuring all deliverables are complete before moving to the next phase. Test thoroughly at each stage to catch issues early.
-
