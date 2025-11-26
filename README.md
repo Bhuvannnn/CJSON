@@ -19,6 +19,9 @@ npm install cjson
 yarn add cjson
 ```
 
+> **Note**  
+> If you’re working from this repository before it’s published to npm, run `npm install` in the repo root and import from `./src` in your local experiments instead of `'cjson'`.
+
 ## Quick Start
 
 ```ts
@@ -102,10 +105,17 @@ npx tsx examples/basic.ts
 npm install
 npm run build        # compile TypeScript
 npm test             # run unit & integration tests (Vitest)
+npm run lint         # run ESLint on src
 npm run benchmark    # measure encode/decode performance
 ```
 
 CI is provided via GitHub Actions (`.github/workflows/ci.yml`) and runs lint + tests + build on pushes/PRs targeting `main` or `phase-5`.
+
+## Project Status
+
+- Current version: `0.1.0` (early release; API may evolve).
+- Parser, encoder, decoder, validator, and benchmarks are implemented and covered by tests.
+- Once the package is published to npm, external projects can depend on it via `npm install cjson`.
 
 ## License
 
