@@ -39,3 +39,11 @@ yarn-error.log*
 
 # Reference implementations (external code for reference only)
 reference/
+
+# Marketing/visual assets (not committed to repo)
+marketing/
+*.html
+comparison-*.png
+comparison-*.jpg
+benchmark-*.png
+benchmark-*.jpg
