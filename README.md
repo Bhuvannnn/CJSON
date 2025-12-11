@@ -19,6 +19,12 @@ npm install cjson
 yarn add cjson
 ```
 
+Scoped package (published):
+
+```bash
+npm install @bhuvanshah/cjson
+```
+
 > **Note**  
 > If you’re working from this repository before it’s published to npm, run `npm install` in the repo root and import from `./src` in your local experiments instead of `'cjson'`.
 
@@ -120,6 +126,11 @@ CI is provided via GitHub Actions (`.github/workflows/ci.yml`) and runs lint + t
 ## License
 
 MIT © 2025-present CJSON contributors.
+
+## Support / Issues
+
+- File bugs or questions here: https://github.com/bhuvanshah/Cjson/issues
+- Install from npm: `npm install @bhuvanshah/cjson`
 
 ## References
 
