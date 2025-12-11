@@ -218,19 +218,19 @@ export function tokenize(input: string): Token[] {
         // Don't create a DASH token, just continue to value parsing
       } else {
         // This is an array item dash
-        const dashColumn = column;
-        advance();
-        tokens.push(createToken(TokenType.DASH, '-', line, dashColumn));
-        // Skip spaces or tabs after dash without emitting INDENT tokens
-        while (true) {
-          const nextChar = peek();
-          if (nextChar === ' ' || nextChar === '\t') {
-            advance();
-            continue;
-          }
-          break;
+      const dashColumn = column;
+      advance();
+      tokens.push(createToken(TokenType.DASH, '-', line, dashColumn));
+      // Skip spaces or tabs after dash without emitting INDENT tokens
+      while (true) {
+        const nextChar = peek();
+        if (nextChar === ' ' || nextChar === '\t') {
+          advance();
+          continue;
         }
-        continue;
+        break;
+      }
+      continue;
       }
     }
 

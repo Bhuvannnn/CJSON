@@ -1,6 +1,6 @@
 {
-  "name": "cjson",
-  "version": "0.2.0",
+  "name": "@bhuvanshah/cjson",
+  "version": "0.1.0",
   "description": "Compact JSON - Token-efficient serialization for LLMs",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
