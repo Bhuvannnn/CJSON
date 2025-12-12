@@ -14,24 +14,18 @@ Compact JSON (CJSON) is a token-efficient, human-readable serialization format i
 ## Installation
 
 ```bash
-npm install cjson
-# or
-yarn add cjson
-```
-
-Scoped package (published):
-
-```bash
 npm install @bhuvanshah/cjson
+# or
+yarn add @bhuvanshah/cjson
 ```
 
 > **Note**  
-> If you’re working from this repository before it’s published to npm, run `npm install` in the repo root and import from `./src` in your local experiments instead of `'cjson'`.
+> If you're working from this repository before it's published to npm, run `npm install` in the repo root and import from `./src` in your local experiments instead of `'@bhuvanshah/cjson'`.
 
 ## Quick Start
 
 ```ts
-import { encode, decode } from 'cjson';
+import { encode, decode } from '@bhuvanshah/cjson';
 
 const data = {
   name: 'Alice',
@@ -58,7 +52,7 @@ const parsed = decode(cjson);
 ### Parsing only
 
 ```ts
-import { parse, astToValue } from 'cjson';
+import { parse, astToValue } from '@bhuvanshah/cjson';
 
 const ast = parse('user:\n  name: Mira\n  active: true');
 const value = astToValue(ast); // { user: { name: 'Mira', active: true } }
@@ -119,9 +113,9 @@ CI is provided via GitHub Actions (`.github/workflows/ci.yml`) and runs lint + t
 
 ## Project Status
 
-- Current version: `0.1.0` (early release; API may evolve).
+- Current version: `0.1.2` (early release; API may evolve).
 - Parser, encoder, decoder, validator, and benchmarks are implemented and covered by tests.
-- Once the package is published to npm, external projects can depend on it via `npm install cjson`.
+- Install from npm: `npm install @bhuvanshah/cjson`
 
 ## License
 
@@ -129,7 +123,7 @@ MIT © 2025-present CJSON contributors.
 
 ## Support / Issues
 
-- File bugs or questions here: https://github.com/bhuvanshah/Cjson/issues
+- File bugs or questions here: https://github.com/Bhuvannnn/CJSON/issues
 - Install from npm: `npm install @bhuvanshah/cjson`
 
 ## References
